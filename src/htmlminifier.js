@@ -1,11 +1,9 @@
 'use strict';
 
-var CleanCSS = require('clean-css');
 var decode = require('he').decode;
 var HTMLParser = require('./htmlparser').HTMLParser;
 var RelateUrl = require('relateurl');
 var TokenChain = require('./tokenchain');
-var UglifyJS = require('uglify-js');
 var utils = require('./utils');
 
 function trimWhitespace(str) {
@@ -255,7 +253,7 @@ function isSrcset(attrName, tag) {
 }
 
 function cleanAttributeValue(tag, attrName, attrValue, options, attrs) {
-  if (isEventAttribute(attrName, options)) {
+  if (options.minifyJS && isEventAttribute(attrName, options)) {
     attrValue = trimWhitespace(attrValue).replace(/^javascript:\s*/i, '');
     return options.minifyJS(attrValue, true);
   }
@@ -278,7 +276,7 @@ function cleanAttributeValue(tag, attrName, attrValue, options, attrs) {
   }
   else if (attrName === 'style') {
     attrValue = trimWhitespace(attrValue);
-    if (attrValue) {
+    if (options.minifyCSS && attrValue) {
       if (/;$/.test(attrValue) && !/&#?[0-9a-zA-Z]+;$/.test(attrValue)) {
         attrValue = attrValue.replace(/\s*;$/, ';');
       }
@@ -317,7 +315,7 @@ function cleanAttributeValue(tag, attrName, attrValue, options, attrs) {
   else if (tag === 'script' && attrName === 'type') {
     attrValue = trimWhitespace(attrValue.replace(/\s*;\s*/g, ';'));
   }
-  else if (isMediaQuery(tag, attrs, attrName)) {
+  else if (options.minifyCSS && isMediaQuery(tag, attrs, attrName)) {
     attrValue = trimWhitespace(attrValue);
     return options.minifyCSS(attrValue, 'media');
   }
@@ -339,7 +337,6 @@ function ignoreCSS(id) {
   return '/* clean-css ignore:start */' + id + '/* clean-css ignore:end */';
 }
 
-// Wrap CSS declarations for CleanCSS > 3.x
 // See https://github.com/jakubpawlowicz/clean-css/issues/418
 function wrapCSS(text, type) {
   switch (type) {
@@ -350,19 +347,6 @@ function wrapCSS(text, type) {
     default:
       return text;
   }
-}
-
-function unwrapCSS(text, type) {
-  var matches;
-  switch (type) {
-    case 'inline':
-      matches = text.match(/^\*\{([\s\S]*)\}$/);
-      break;
-    case 'media':
-      matches = text.match(/^@media ([\s\S]*?)\s*{[\s\S]*}$/);
-      break;
-  }
-  return matches ? matches[1] : text;
 }
 
 function cleanConditionalComment(comment, options) {
@@ -654,43 +638,10 @@ function processOptions(values) {
       }
     }
     else if (key === 'minifyCSS' && typeof value !== 'function') {
-      if (!value) {
-        return;
-      }
-      if (typeof value !== 'object') {
-        value = {};
-      }
-      options.minifyCSS = function(text, type) {
-        text = text.replace(/(url\s*\(\s*)("|'|)(.*?)\2(\s*\))/ig, function(match, prefix, quote, url, suffix) {
-          return prefix + quote + options.minifyURLs(url) + quote + suffix;
-        });
-        var cleanCssOutput = new CleanCSS(value).minify(wrapCSS(text, type));
-        if (cleanCssOutput.errors.length > 0) {
-          cleanCssOutput.errors.forEach(options.log);
-          return text;
-        }
-        return unwrapCSS(cleanCssOutput.styles, type);
-      };
+      options.minifyCSS = null;
     }
     else if (key === 'minifyJS' && typeof value !== 'function') {
-      if (!value) {
-        return;
-      }
-      if (typeof value !== 'object') {
-        value = {};
-      }
-      (value.parse || (value.parse = {})).bare_returns = false;
-      options.minifyJS = function(text, inline) {
-        var start = text.match(/^\s*<!--.*/);
-        var code = start ? text.slice(start[0].length).replace(/\n\s*-->\s*$/, '') : text;
-        value.parse.bare_returns = inline;
-        var result = UglifyJS.minify(code, value);
-        if (result.error) {
-          options.log(result.error);
-          return text;
-        }
-        return result.code.replace(/;$/, '');
-      };
+      options.minifyJS = null;
     }
     else if (key === 'minifyURLs' && typeof value !== 'function') {
       if (!value) {
@@ -873,7 +824,7 @@ function minify(value, options, partialMarkup) {
                 return chunks[1] + uidAttr + index + chunks[2];
               });
               var ids = [];
-              new CleanCSS().minify(wrapCSS(text, type)).warnings.forEach(function(warning) {
+              fn(wrapCSS(text, type)).warnings.forEach(function(warning) {
                 var match = uidPattern.exec(warning);
                 if (match) {
                   var id = uidAttr + match[2];
@@ -1173,10 +1124,10 @@ function minify(value, options, partialMarkup) {
       if (options.processScripts && specialContentTags(currentTag)) {
         text = processScript(text, options, currentAttrs);
       }
-      if (isExecutableScript(currentTag, currentAttrs)) {
+      if (options.minifyJS && isExecutableScript(currentTag, currentAttrs)) {
         text = options.minifyJS(text);
       }
-      if (isStyleSheet(currentTag, currentAttrs)) {
+      if (options.minifyCSS && isStyleSheet(currentTag, currentAttrs)) {
         text = options.minifyCSS(text);
       }
       if (options.removeOptionalTags && text) {
