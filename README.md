@@ -1,6 +1,6 @@
 # HTMLMinifier
 
-This version of [kangax/html-minifier](https://github.com/kangax/html-minifier) removes dependencies for `UglifyJS` and `clean-css` which were breaking my React SSR builds. The option for minifying inline CSS and JS is completely opt-in with this fork.
+This fork of [kangax/html-minifier](https://github.com/kangax/html-minifier) removes dependencies for `UglifyJS` and `clean-css` which were breaking my React SSR builds. The option for minifying inline CSS and JS is completely opt-in with this version.
 
 ## Installation
 `yarn add @stellar-apps/html-minifier`
