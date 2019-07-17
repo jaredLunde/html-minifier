@@ -253,7 +253,7 @@ function isSrcset(attrName, tag) {
 }
 
 function cleanAttributeValue(tag, attrName, attrValue, options, attrs) {
-  if (options.minifyJS && isEventAttribute(attrName, options)) {
+  if (isEventAttribute(attrName, options)) {
     attrValue = trimWhitespace(attrValue).replace(/^javascript:\s*/i, '');
     return options.minifyJS(attrValue, true);
   }
@@ -276,7 +276,7 @@ function cleanAttributeValue(tag, attrName, attrValue, options, attrs) {
   }
   else if (attrName === 'style') {
     attrValue = trimWhitespace(attrValue);
-    if (options.minifyCSS && attrValue) {
+    if (attrValue) {
       if (/;$/.test(attrValue) && !/&#?[0-9a-zA-Z]+;$/.test(attrValue)) {
         attrValue = attrValue.replace(/\s*;$/, ';');
       }
@@ -309,13 +309,16 @@ function cleanAttributeValue(tag, attrName, attrValue, options, attrs) {
       return (+numString).toString();
     });
   }
+  else if (isContentSecurityPolicy(tag, attrs) && attrName.toLowerCase() === 'content') {
+    return collapseWhitespaceAll(attrValue);
+  }
   else if (options.customAttrCollapse && options.customAttrCollapse.test(attrName)) {
     attrValue = attrValue.replace(/\n+|\r+|\s{2,}/g, '');
   }
   else if (tag === 'script' && attrName === 'type') {
     attrValue = trimWhitespace(attrValue.replace(/\s*;\s*/g, ';'));
   }
-  else if (options.minifyCSS && isMediaQuery(tag, attrs, attrName)) {
+  else if (isMediaQuery(tag, attrs, attrName)) {
     attrValue = trimWhitespace(attrValue);
     return options.minifyCSS(attrValue, 'media');
   }
@@ -333,10 +336,22 @@ function isMetaViewport(tag, attrs) {
   }
 }
 
+function isContentSecurityPolicy(tag, attrs) {
+  if (tag !== 'meta') {
+    return false;
+  }
+  for (var i = 0, len = attrs.length; i < len; i++) {
+    if (attrs[i].name.toLowerCase() === 'http-equiv' && attrs[i].value.toLowerCase() === 'content-security-policy') {
+      return true;
+    }
+  }
+}
+
 function ignoreCSS(id) {
   return '/* clean-css ignore:start */' + id + '/* clean-css ignore:end */';
 }
 
+// Wrap CSS declarations for CleanCSS > 3.x
 // See https://github.com/jakubpawlowicz/clean-css/issues/418
 function wrapCSS(text, type) {
   switch (type) {
@@ -349,6 +364,19 @@ function wrapCSS(text, type) {
   }
 }
 
+function unwrapCSS(text, type) {
+  var matches;
+  switch (type) {
+    case 'inline':
+      matches = text.match(/^\*\{([\s\S]*)\}$/);
+      break;
+    case 'media':
+      matches = text.match(/^@media ([\s\S]*?)\s*{[\s\S]*}$/);
+      break;
+  }
+  return matches ? matches[1] : text;
+}
+
 function cleanConditionalComment(comment, options) {
   return options.processConditionalComments ? comment.replace(/^(\[if\s[^\]]+]>)([\s\S]*?)(<!\[endif])$/, function(match, prefix, text, suffix) {
     return prefix + minify(text, options, true) + suffix;
@@ -358,7 +386,7 @@ function cleanConditionalComment(comment, options) {
 function processScript(text, options, currentAttrs) {
   for (var i = 0, len = currentAttrs.length; i < len; i++) {
     if (currentAttrs[i].name.toLowerCase() === 'type' &&
-        options.processScripts.indexOf(currentAttrs[i].value) > -1) {
+      options.processScripts.indexOf(currentAttrs[i].value) > -1) {
       return minify(text, options);
     }
   }
@@ -452,7 +480,7 @@ function canRemovePrecedingTag(optionalEndTag, tag) {
 
 var reEmptyAttribute = new RegExp(
   '^(?:class|id|style|title|lang|dir|on(?:focus|blur|change|click|dblclick|mouse(' +
-    '?:down|up|over|move|out)|key(?:press|down|up)))$');
+  '?:down|up|over|move|out)|key(?:press|down|up)))$');
 
 function canDeleteEmptyAttribute(tag, attrName, attrValue, options) {
   var isValueEmpty = !attrValue || /^\s*$/.test(attrValue);
@@ -514,7 +542,7 @@ function canTrimWhitespace(tag) {
 
 function normalizeAttr(attr, attrs, tag, options) {
   var attrName = options.name(attr.name),
-      attrValue = attr.value;
+    attrValue = attr.value;
 
   if (options.decodeEntities && attrValue) {
     attrValue = decode(attrValue, { isAttributeValue: true });
@@ -534,7 +562,7 @@ function normalizeAttr(attr, attrs, tag, options) {
   }
 
   if (options.removeEmptyAttributes &&
-      canDeleteEmptyAttribute(tag, attrName, attrValue, options)) {
+    canDeleteEmptyAttribute(tag, attrName, attrValue, options)) {
     return;
   }
 
@@ -551,14 +579,14 @@ function normalizeAttr(attr, attrs, tag, options) {
 
 function buildAttr(normalized, hasUnarySlash, options, isLast, uidAttr) {
   var attrName = normalized.name,
-      attrValue = normalized.value,
-      attr = normalized.attr,
-      attrQuote = attr.quote,
-      attrFragment,
-      emittedAttrValue;
+    attrValue = normalized.value,
+    attr = normalized.attr,
+    attrQuote = attr.quote,
+    attrFragment,
+    emittedAttrValue;
 
   if (typeof attrValue !== 'undefined' && (!options.removeAttributeQuotes ||
-      ~attrValue.indexOf(uidAttr) || !canRemoveAttributeQuotes(attrValue))) {
+    ~attrValue.indexOf(uidAttr) || !canRemoveAttributeQuotes(attrValue))) {
     if (!options.preventAttributesEscaping) {
       if (typeof options.quoteCharacter === 'undefined') {
         var apos = (attrValue.match(/'/g) || []).length;
@@ -589,7 +617,7 @@ function buildAttr(normalized, hasUnarySlash, options, isLast, uidAttr) {
   }
 
   if (typeof attrValue === 'undefined' || options.collapseBooleanAttributes &&
-      isBooleanAttribute(attrName.toLowerCase(), attrValue.toLowerCase())) {
+    isBooleanAttribute(attrName.toLowerCase(), attrValue.toLowerCase())) {
     attrFragment = attrName;
     if (!isLast) {
       attrFragment += ' ';
@@ -638,10 +666,35 @@ function processOptions(values) {
       }
     }
     else if (key === 'minifyCSS' && typeof value !== 'function') {
-      options.minifyCSS = null;
+      if (!value) {
+        return;
+      }
+      if (typeof value !== 'object') {
+        value = {};
+      }
+      options.minifyCSS = function(text, type) {
+        text = text.replace(/(url\s*\(\s*)("|'|)(.*?)\2(\s*\))/ig, function(match, prefix, quote, url, suffix) {
+          return prefix + quote + options.minifyURLs(url) + quote + suffix;
+        });
+        var cleanCssOutput = new CleanCSS(value).minify(wrapCSS(text, type));
+        if (cleanCssOutput.errors.length > 0) {
+          cleanCssOutput.errors.forEach(options.log);
+          return text;
+        }
+        return unwrapCSS(cleanCssOutput.styles, type);
+      };
     }
     else if (key === 'minifyJS' && typeof value !== 'function') {
-      options.minifyJS = null;
+      if (!value) {
+        return;
+      }
+      if (typeof value !== 'object') {
+        value = {};
+      }
+      (value.parse || (value.parse = {})).bare_returns = false;
+      options.minifyJS = function(text, inline) {
+        return text;
+      };
     }
     else if (key === 'minifyURLs' && typeof value !== 'function') {
       if (!value) {
@@ -724,7 +777,7 @@ function createSortFns(value, options, uidIgnore, uidAttr) {
       },
       chars: function(text) {
         if (options.processScripts && specialContentTags(currentTag) &&
-            options.processScripts.indexOf(currentType) > -1) {
+          options.processScripts.indexOf(currentType) > -1) {
           scan(text);
         }
       }
@@ -770,20 +823,20 @@ function minify(value, options, partialMarkup) {
   }
 
   var buffer = [],
-      charsPrevTag,
-      currentChars = '',
-      hasChars,
-      currentTag = '',
-      currentAttrs = [],
-      stackNoTrimWhitespace = [],
-      stackNoCollapseWhitespace = [],
-      optionalStartTag = '',
-      optionalEndTag = '',
-      ignoredMarkupChunks = [],
-      ignoredCustomMarkupChunks = [],
-      uidIgnore,
-      uidAttr,
-      uidPattern;
+    charsPrevTag,
+    currentChars = '',
+    hasChars,
+    currentTag = '',
+    currentAttrs = [],
+    stackNoTrimWhitespace = [],
+    stackNoCollapseWhitespace = [],
+    optionalStartTag = '',
+    optionalEndTag = '',
+    ignoredMarkupChunks = [],
+    ignoredCustomMarkupChunks = [],
+    uidIgnore,
+    uidAttr,
+    uidPattern;
 
   // temporarily replace ignored chunks with comments,
   // so that we don't have to worry what's there.
@@ -815,27 +868,10 @@ function minify(value, options, partialMarkup) {
     value = value.replace(reCustomIgnore, function(match) {
       if (!uidAttr) {
         uidAttr = uniqueId(value);
-        uidPattern = new RegExp('(\\s*)' + uidAttr + '([0-9]+)(\\s*)', 'g');
+        uidPattern = new RegExp('(\\s*)' + uidAttr + '([0-9]+)' + uidAttr + '(\\s*)', 'g');
         if (options.minifyCSS) {
           options.minifyCSS = (function(fn) {
             return function(text, type) {
-              text = text.replace(uidPattern, function(match, prefix, index) {
-                var chunks = ignoredCustomMarkupChunks[+index];
-                return chunks[1] + uidAttr + index + chunks[2];
-              });
-              var ids = [];
-              fn(wrapCSS(text, type)).warnings.forEach(function(warning) {
-                var match = uidPattern.exec(warning);
-                if (match) {
-                  var id = uidAttr + match[2];
-                  text = text.replace(id, ignoreCSS(id));
-                  ids.push(id);
-                }
-              });
-              text = fn(text, type);
-              ids.forEach(function(id) {
-                text = text.replace(ignoreCSS(id), id);
-              });
               return text;
             };
           })(options.minifyCSS);
@@ -845,20 +881,20 @@ function minify(value, options, partialMarkup) {
             return function(text, type) {
               return fn(text.replace(uidPattern, function(match, prefix, index) {
                 var chunks = ignoredCustomMarkupChunks[+index];
-                return chunks[1] + uidAttr + index + chunks[2];
+                return chunks[1] + uidAttr + index + uidAttr + chunks[2];
               }), type);
             };
           })(options.minifyJS);
         }
       }
-      var token = uidAttr + ignoredCustomMarkupChunks.length;
+      var token = uidAttr + ignoredCustomMarkupChunks.length + uidAttr;
       ignoredCustomMarkupChunks.push(/^(\s*)[\s\S]*?(\s*)$/.exec(match));
       return '\t' + token + '\t';
     });
   }
 
   if (options.sortAttributes && typeof options.sortAttributes !== 'function' ||
-      options.sortClassName && typeof options.sortClassName !== 'function') {
+    options.sortClassName && typeof options.sortClassName !== 'function') {
     createSortFns(value, options, uidIgnore, uidAttr);
   }
 
@@ -916,6 +952,9 @@ function minify(value, options, partialMarkup) {
 
   new HTMLParser(value, {
     partialMarkup: partialMarkup,
+    continueOnParseError: options.continueOnParseError,
+    customAttrAssign: options.customAttrAssign,
+    customAttrSurround: options.customAttrSurround,
     html5: options.html5,
 
     start: function(tag, attrs, unary, unarySlash, autoGenerated) {
@@ -1124,10 +1163,10 @@ function minify(value, options, partialMarkup) {
       if (options.processScripts && specialContentTags(currentTag)) {
         text = processScript(text, options, currentAttrs);
       }
-      if (options.minifyJS && isExecutableScript(currentTag, currentAttrs)) {
+      if (isExecutableScript(currentTag, currentAttrs)) {
         text = options.minifyJS(text);
       }
-      if (options.minifyCSS && isStyleSheet(currentTag, currentAttrs)) {
+      if (isStyleSheet(currentTag, currentAttrs)) {
         text = options.minifyCSS(text);
       }
       if (options.removeOptionalTags && text) {
@@ -1192,9 +1231,7 @@ function minify(value, options, partialMarkup) {
       buffer.push(options.useShortDoctype ? '<!doctype' +
         (options.removeTagWhitespace ? '' : ' ') + 'html>' :
         collapseWhitespaceAll(doctype));
-    },
-    customAttrAssign: options.customAttrAssign,
-    customAttrSurround: options.customAttrSurround
+    }
   });
 
   if (options.removeOptionalTags) {
